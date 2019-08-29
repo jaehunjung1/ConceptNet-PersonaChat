@@ -1,0 +1,8 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = true
+	ignorecase = true
+[remote "master"]
+	url = https://github.com/sharkmir1/ConceptNet-PersonaChat.git
+	fetch = +refs/heads/*:refs/remotes/master/*
