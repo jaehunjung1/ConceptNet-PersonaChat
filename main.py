@@ -97,5 +97,5 @@ if __name__ == "__main__":
         qa_match += sum([torch.sum((conceptNet.ent1 == ent_q) * (conceptNet.ent2 == ent_a)[:, i].unsqueeze(1))
                          for i in range(ent_a.size(1))])
 
-    qa_avg = qa_match / persona.q.size(0)
+    qa_avg = float(qa_match) / persona.q.size(0)
     ipdb.set_trace()
