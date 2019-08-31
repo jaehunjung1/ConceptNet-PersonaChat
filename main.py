@@ -58,12 +58,13 @@ class Persona:
                                 for j in range(len(dialog)-1)])
 
             # remove needless k-v pairs
-            self.dataset[i].pop('start_time')
-            self.dataset[i].pop('end_time')
-            self.dataset[i].pop('eval_score')
-            self.dataset[i].pop('profile_match')
-            self.dataset[i].pop('participant1_id')
-            self.dataset[i].pop('participant2_id')
+            if "data_" in self.path:
+                self.dataset[i].pop('start_time')
+                self.dataset[i].pop('end_time')
+                self.dataset[i].pop('eval_score')
+                self.dataset[i].pop('profile_match')
+                self.dataset[i].pop('participant1_id')
+                self.dataset[i].pop('participant2_id')
 
             # 'user_profile', 'bot_profile': persona
             # self.dataset[i]['user_profile'] = call_api_many(row['user_profile'], pagination_param=10000)
@@ -80,7 +81,7 @@ if __name__ == "__main__":
     print("Device:", device)
 
     conceptNet = ConceptNet("./conceptnet_data/train100k.tsv")
-    persona = Persona("./persona_data/data_tolokers.json", conceptNet)
+    persona = Persona("./persona_data/train_both_original_no_cands.json", conceptNet)
 
     qa_match = 0  # number of (entity1, entity2) in q-a pair
     for i in tqdm(range(persona.q.size(0))):
