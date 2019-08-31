@@ -3,11 +3,7 @@ from torchtext import data
 import ipdb
 import json
 from tqdm import tqdm
-from openie.open_ie_api import *
 from nltk import word_tokenize
-
-# Torch device
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class ConceptNet:
@@ -32,7 +28,7 @@ class ConceptNet:
         # self.ent2.build_vocab(self.dataset, min_freq=1)
 
         iterator = list(data.Iterator(self.dataset, len(self.dataset), device=device, repeat=False,
-                                  sort_key=lambda x: -self.ENT1.vocab.stoi[x], train=False))[0]
+                                      sort_key=lambda x: -self.ENT1.vocab.stoi[x], train=False))[0]
 
         self.rel, self.ent1, self.ent2 = iterator.rel.unsqueeze(1).to(device), iterator.ent1.unsqueeze(1).to(device), \
                                          iterator.ent2.unsqueeze(1).to(device)
@@ -55,7 +51,7 @@ class Persona:
             self.dataset[i]['dialog'] = [(dialog[i]['text'].lower(), dialog[i + 1]['text'].lower())
                                          for i in range(len(dialog) - 1)]
             self.dialog.extend([list((map(word_tokenize, self.dataset[i]['dialog'][j])))
-                                for j in range(len(dialog)-1)])
+                                for j in range(len(dialog) - 1)])
 
             # remove needless k-v pairs
             if "data_" in self.path:
@@ -78,6 +74,9 @@ class Persona:
 
 
 if __name__ == "__main__":
+    # Torch device
+    gpu_idx = input("GPU IDX: ")
+    device = torch.device('cuda:' + gpu_idx if torch.cuda.is_available() else 'cpu')
     print("Device:", device)
 
     conceptNet = ConceptNet("./conceptnet_data/train100k.tsv")
@@ -85,7 +84,6 @@ if __name__ == "__main__":
 
     qa_match = 0  # number of (entity1, entity2) in q-a pair
     for i in tqdm(range(persona.q.size(0))):
-
         row_q = persona.q[i]
         row_a = persona.a[i]
 
