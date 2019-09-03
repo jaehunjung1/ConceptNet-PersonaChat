@@ -31,7 +31,6 @@ if __name__ == "__main__":
                 arr.append(line)
 
     json_arr = []
-    json_obj = {"dialog": [], "user_profile": [], "bot_profile": []}
     chunk = []
     for row in arr:
         if row.startswith("1 "):

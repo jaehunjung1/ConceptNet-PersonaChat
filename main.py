@@ -3,7 +3,12 @@ from torchtext import data
 import ipdb
 import json
 from tqdm import tqdm
-from nltk import word_tokenize
+import nltk
+from nltk.corpus import stopwords, wordnet
+from nltk.stem import WordNetLemmatizer
+from rake_nltk import Rake
+import string
+import jsonlines
 
 
 class ConceptNet:
@@ -35,65 +40,122 @@ class ConceptNet:
 
 
 class Persona:
-    def __init__(self, dir, concepetNet):
+    def __init__(self, dir, conceptNet):
         self.path = dir
         self.conceptNet = conceptNet
         with open(self.path, 'r') as f:
             self.dataset = json.load(f)
-        self.dialog = []  # list of chunked q-a lists, each word_tokenized
+        self.dialog = []  # [{"id": 0, "speakerA": [("i", "N") ...], "speakerB": ~}, ...]
+        self.candidates = [] # [[id, [lemmatized speakerA], [lemmatized speakerB]], ...]
         self.q, self.a = None, None
-        self.process_json()
 
-    def process_json(self):
+        self.lemmatizer = WordNetLemmatizer()
+        self.tag_dict = {"J": wordnet.ADJ,
+                        "N": wordnet.NOUN,
+                        "V": wordnet.VERB,
+                        "R": wordnet.ADV}
+
+    def _proc_with_stopwords(self, obj):
+        return [x for x in obj if x[0] not in self.stops]
+
+    def _lemmatize(self, pos):
+        lem = []
+        for w, tag in pos:
+            tag_proj = self.tag_dict.get(tag[0], None)
+            if tag_proj is not None:
+                lem.append(self.lemmatizer.lemmatize(w, tag_proj))
+        return lem
+
+    def process(self, filt):
+        if filt == 'stopwords':
+            self.stops = set(stopwords.words('english'))
+        elif filt == 'rake':
+            self.rake = Rake(max_length=1, punctuations=string.punctuation + "’")
+            topk = 5
+
         for i, row in tqdm(enumerate(self.dataset)):
             # split multi turn dialogs into list of q-a pairs
             dialog = row['dialog']
-            self.dataset[i]['dialog'] = [(dialog[i]['text'].lower(), dialog[i + 1]['text'].lower())
-                                         for i in range(len(dialog) - 1)]
-            self.dialog.extend([list((map(word_tokenize, self.dataset[i]['dialog'][j])))
-                                for j in range(len(dialog) - 1)])
+            self.dataset[i]['dialog'] = [(dialog[idx]['text'].lower(), dialog[idx + 1]['text'].lower())
+                                         for idx in range(len(dialog) - 1)]
+            self.dialog.append({"id": len(self.dialog),
+                                "speakerA": self.dataset[i]['dialog'][0],
+                                "speakerB": self.dataset[i]['dialog'][1]})
 
-            # remove needless k-v pairs
-            if "data_" in self.path:
-                self.dataset[i].pop('start_time')
-                self.dataset[i].pop('end_time')
-                self.dataset[i].pop('eval_score')
-                self.dataset[i].pop('profile_match')
-                self.dataset[i].pop('participant1_id')
-                self.dataset[i].pop('participant2_id')
+            for j in range(len(dialog) - 1):
+                q_pos = nltk.pos_tag(nltk.word_tokenize(self.dataset[i]['dialog'][j][0]))
+                a_pos = nltk.pos_tag(nltk.word_tokenize(self.dataset[i]['dialog'][j][1]))
+
+                if filt == 'stopwords':  # stopwords option: exclude all stopwords from speakerA, speakerB
+                    q_pos = self._proc_with_stopwords(q_pos)
+                    a_pos = self._proc_with_stopwords(a_pos)
+                elif filt == 'rake':  # rake option: extract entities using rake algorithm
+                    self.rake.extract_keywords_from_text(self.dataset[i]['dialog'][j][0])
+                    raked = self.rake.get_ranked_phrases()[:topk]
+                    q_pos = list(set([x for x in q_pos if x[0] in raked]))
+
+                    self.rake.extract_keywords_from_text(self.dataset[i]['dialog'][j][1])
+                    raked = self.rake.get_ranked_phrases()[:topk]
+                    a_pos = list(set([x for x in a_pos if x[0] in raked]))
+
+                if len(q_pos) > 0 and len(a_pos) > 0:
+                    q_lem = self._lemmatize(q_pos)
+                    a_lem = self._lemmatize(a_pos)
+                    self.candidates.append([len(self.dialog)-1, q_lem, a_lem])
 
             # 'user_profile', 'bot_profile': persona
-            # self.dataset[i]['user_profile'] = call_api_many(row['user_profile'], pagination_param=10000)
 
-        field = data.Field(sequential=True, batch_first=True)
-        field.vocab = conceptNet.ENT1.vocab
+        self.field = data.Field(sequential=True, batch_first=True)
+        self.field.vocab = self.conceptNet.ENT1.vocab
 
-        q, a = tuple(zip(*self.dialog))
-        self.q = field.numericalize(field.pad(q)).to(device)
-        self.a = field.numericalize(field.pad(a)).to(device)
+        self.id, q, a = tuple(zip(*self.candidates))
+        self.q = self.field.numericalize(self.field.pad(q)).to(device)
+        self.a = self.field.numericalize(self.field.pad(a)).to(device)
 
 
 if __name__ == "__main__":
+    # Configuration
+    filt = 'rake'
+    conceptNet_dir = "./conceptnet_data/train100k.tsv"
+    persona_dir = "./persona_data/train_both_original_no_cands.json"
+    save_dir = "./output/result.json"
+
     # Torch device
     gpu_idx = input("GPU IDX: ")
     device = torch.device('cuda:' + gpu_idx if torch.cuda.is_available() else 'cpu')
     print("Device:", device)
 
-    conceptNet = ConceptNet("./conceptnet_data/train100k.tsv")
-    persona = Persona("./persona_data/train_both_original_no_cands.json", conceptNet)
+    # Fix random seed
+    torch.manual_seed(0)
 
-    qa_match = 0  # number of (entity1, entity2) in q-a pair
+    conceptNet = ConceptNet(conceptNet_dir)
+    persona = Persona(persona_dir, conceptNet)
+    persona.process(filt)
+
+    writer = jsonlines.open(save_dir, 'w')
+
+    qa_match_all = 0.0  # number of (entity1, entity2) in q-a pair
     for i in tqdm(range(persona.q.size(0))):
+        row_id = persona.id[i]
         row_q = persona.q[i]
         row_a = persona.a[i]
 
-        ent_q = torch.unique(row_q)  # unique entities in query
-        ent_a = torch.unique(row_a)  # unique entities in answer
-        ent_q = ent_q.repeat(conceptNet.ent1.size(0), 1)
-        ent_a = ent_a.repeat(conceptNet.ent2.size(0), 1)
+        ent_q = row_q.repeat(conceptNet.ent1.size(0), 1)
+        ent_a = row_a.repeat(conceptNet.ent2.size(0), 1)
+        qa_match_pos = [((conceptNet.ent1 == ent_q)[:, i].unsqueeze(1) * (conceptNet.ent2 == ent_a)).nonzero() for i in
+                        range(ent_q.size(1))]  # 0
+        has_qa_match = torch.tensor([t.nelement() > 0 for t in qa_match_pos])
+        qa_match_q_idx = has_qa_match.nonzero().squeeze(-1)
 
-        qa_match += sum([torch.sum((conceptNet.ent1 == ent_q) * (conceptNet.ent2 == ent_a)[:, i].unsqueeze(1))
-                         for i in range(ent_a.size(1))])
+        for c_q_pos in qa_match_q_idx:
+            r_pos = qa_match_pos[c_q_pos][0][0].item()
+            c_a_pos = qa_match_pos[c_q_pos][0][1].item()
+            match_tok_q = persona.field.vocab.itos[ent_q[r_pos, c_q_pos].item()]
+            match_tok_a = persona.field.vocab.itos[ent_a[r_pos, c_a_pos].item()]
+            d = {'id': row_id, 'tok_q': match_tok_q, 'tok_a': match_tok_a}
+            writer.write(d)
 
-    qa_avg = float(qa_match) / persona.q.size(0)
-    ipdb.set_trace()
+        qa_match_all += sum([t.nelement() for t in qa_match_pos])
+
+    qa_avg = qa_match_all / persona.q.size(0)
+    print('{} : {}'.format(filt, qa_avg))
