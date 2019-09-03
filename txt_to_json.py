@@ -3,8 +3,9 @@ import ipdb
 import json
 
 
-def preprocess(chunk):
-    obj = {"dialog": [], "user_profile": [], "bot_profile": []}
+
+def preprocess(chunk, idx):
+    obj = {"id": idx, "dialog": [], "user_profile": [], "bot_profile": []}
 
     for row in chunk:
         row = re.sub(r'^\d+ ', '', row)
@@ -32,10 +33,12 @@ if __name__ == "__main__":
 
     json_arr = []
     chunk = []
+    idx = 0
     for row in arr:
         if row.startswith("1 "):
             if len(chunk) > 0:
-                json_arr.append(preprocess(chunk))
+                json_arr.append(preprocess(chunk, idx))
+                idx += 1
             chunk = [row]
 
         else:
