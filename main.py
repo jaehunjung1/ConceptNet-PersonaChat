@@ -101,7 +101,7 @@ class Persona:
                 if len(q_pos) > 0 and len(a_pos) > 0:
                     q_lem = self._lemmatize(q_pos)
                     a_lem = self._lemmatize(a_pos)
-                    self.candidates.append([len(self.dialog)-1, q_lem, a_lem])
+                    self.candidates.append([len(self.dialog)-1+j, q_lem, a_lem])
 
             # 'user_profile', 'bot_profile': persona
 
@@ -115,7 +115,7 @@ class Persona:
 
 if __name__ == "__main__":
     # Configuration
-    filt = 'rake'
+    filt = 'stopwords'
     conceptNet_dir = "./conceptnet_data/train100k.tsv"
     persona_dir = "./persona_data/train_both_original_no_cands.json"
     save_dir = "./output/result.json"
