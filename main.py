@@ -161,7 +161,7 @@ if __name__ == "__main__":
     persona.process(filt)
 
     qtoa_writer = jsonlines.open(save_dir+"_qtoa.json", 'w')
-    qtopersonaq_writer = jsonlines.open(save_dir+"_qtoa.json", 'w')
+    qtopersonaq_writer = jsonlines.open(save_dir+"_qtopersonaq.json", 'w')
 
     qa_match_all = 0.0  # number of (entity1, entity2) in q-a pair
     qpersonaq_match_all = 0.0
@@ -204,7 +204,7 @@ if __name__ == "__main__":
             d = {'id': row_id, 'tok_q': match_tok_q, 'tok_a': match_tok_a}
             qtopersonaq_writer.write(d)
 
-        qpersonaq_match_all += sum([t.nelement for t in q_personaq_match_pos])
+        qpersonaq_match_all += sum([t.nelement() for t in q_personaq_match_pos])
 
     qa_avg = qa_match_all / persona.q.size(0)
     print('{} : {}'.format(filt, qa_avg))
